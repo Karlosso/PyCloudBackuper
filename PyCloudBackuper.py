@@ -2,19 +2,15 @@ import tarfile
 import os.path
 import argparse
 import pyAesCrypt
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
 
 
-class CreateBackup:
+class CreateBackups:
 
     def __init__(self, src_path, out_file, out_path, verbose, password, encypt):
         self.src_path = src_path
         self.out_file = out_file
         self.out_path = out_path
-
         self.verbose = verbose
-
         self.out_file_crypt = f'{out_file}.aes'
         self.encrypt = encypt
         self.password = password
@@ -25,6 +21,7 @@ class CreateBackup:
 
     def make_tarfile(self):
         """function that make a new tar file"""
+
         try:
             os.chdir(self.out_path)
 
@@ -40,24 +37,18 @@ class CreateBackup:
 
     def __encrpyt_backup(self):
         """function that encrypt the backup"""
+
         pyAesCrypt.encryptFile(infile='test.tar.gz', outfile=self.out_file_crypt, passw=self.password)
         os.remove(self.out_file)
         self.__logging('[+] Backup encrypted')
 
-    def __upload_googledrive(self):
-        """function that uploads the backup to google drive"""
-        gauth = GoogleAuth()
-        gauth.LocalWebserverAuth()  # client_secrets.json need to be in the same directory as the script
-        drive = GoogleDrive(gauth)
 
-
-class DecryptBackup:
+class DecryptBackups:
 
     def __init__(self, src_path, out_path, passwd, verbose):
         self.src_path = src_path
         self.out_path = out_path
         self.passwd = passwd
-
         self.verbose = verbose
 
     def __logging(self, msg):
@@ -66,6 +57,7 @@ class DecryptBackup:
 
     def decrypt_backup(self):
         """function that decrypt backup"""
+
         try:
             pyAesCrypt.decryptFile(infile=self.src_path, outfile=self.out_path, passw=self.passwd)
             self.__logging('[+] Successfully decrypted Backup')
@@ -75,16 +67,17 @@ class DecryptBackup:
 
 if __name__ == '__main__':
 
+    # Parser Config
     parser = argparse.ArgumentParser(prog='backuppy',
                                      description='Create and or upload compressed tar file to your google drive')
 
+    # Paser Arguments
     parser.add_argument('-c', '--create', default=False, required=False, action=argparse.BooleanOptionalAction,
                         help='Create Backup'),
     parser.add_argument('-d', '--decrypt', default=False, required=False, action=argparse.BooleanOptionalAction,
                         help='Decrypt Backup'),
     parser.add_argument('-e', '--encrypt', default=True, required=False, action=argparse.BooleanOptionalAction,
                         help='Encrypt Backup'),
-
     parser.add_argument('-s', '--src_path', type=str, nargs='?',
                         help='Source path of your file or folder')
     parser.add_argument('-o', '--out_path', required=False, type=str, nargs='?',
@@ -98,8 +91,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if (args.create == True) and (args.decrypt == False):
-        obj = CreateBackup(
+
+    if (args.create is True) and (args.decrypt is False):
+        obj = CreateBackups(
             src_path=args.src_path,
             out_file=args.out_file,
             out_path=args.out_path,
@@ -108,17 +102,17 @@ if __name__ == '__main__':
             encypt=args.encrypt,
         )
 
-        CreateBackup.make_tarfile(obj)
+        CreateBackups.make_tarfile(obj)
 
-    elif (args.decrypt == True) and (args.create == False):
-        obj = DecryptBackup(
+    elif (args.decrypt is True) and (args.create is False):
+        obj = DecryptBackups(
             src_path=args.src_path,
             out_path=args.out_path,
             passwd=args.passwd,
             verbose=args.verbose,
         )
 
-        DecryptBackup.decrypt_backup(obj)
+        DecryptBackups.decrypt_backup(obj)
 
     else:
         print('[!] Create backup and decrypt at the same moment is not possible')
