@@ -4,10 +4,11 @@ import os.path
 import sys
 import argparse
 import time
-
 import pyAesCrypt
 from datetime import datetime
+from getpass import getpass
 from pyicloud import PyiCloudService
+from pyicloud import utils as PyiCloudUtils
 
 
 class CreateBackup:
@@ -108,13 +109,35 @@ class ICloudOperations:
         self.api = None
         self.apple_id = apple_id
 
+        self.check_apple_keyring()
         self.authenticate_to_icloud()
         self.__check_backup_folder()
 
-    def authenticate_to_icloud(self):
-        """Function to connect to icloud"""
+    @staticmethod
+    def create_keyring(username):
+        """Function to create a secure iCloud system keyring"""
 
-        self.api = PyiCloudService(apple_id=self.apple_id)
+        password = getpass(prompt=log(level="INTERACTION", message="Enter Apple Account Password: ", return_str=True))
+        PyiCloudUtils.store_password_in_keyring(username, password=password)  # create new keyring
+        log(level="INFO", message="Apple Credentials saved in System Keyring", values={"Apple ID": username})
+
+    @staticmethod
+    def delete_keyring(username):
+        """Function to delete a secure iCloud system keyring"""
+
+        PyiCloudUtils.delete_password_in_keyring(username)  # delete keyring
+        log(level="INFO", message="Apple Credentials deleted from system keyring", values={"Apple ID": username})
+
+    def check_apple_keyring(self):
+        """Function that checks if a keyring exists for the given user"""
+
+        if not PyiCloudUtils.password_exists_in_keyring(username=self.apple_id):
+            self.create_keyring(username=self.apple_id)
+
+    def authenticate_to_icloud(self):
+        """Function to connect to iCloud"""
+
+        self.api = PyiCloudService(apple_id=self.apple_id, cookie_directory=False)
 
         # 2fa authentication
         if self.api.requires_2fa:
@@ -187,6 +210,7 @@ class ICloudOperations:
 
         with open(filename, "rb") as stream:
             self.api.drive["Backup"]["PyCloudBackups"].upload(stream)
+            time.sleep(5)  # Wait 5 seconds before renaming files
             self.api.drive["Backup"]["PyCloudBackups"][f"{filename}"].rename(f"{cur_date}_{filename}")
 
         log("INFO", message="Upload backup file successful", values={"Upload File": f"{cur_date}_{filename}"})
@@ -207,7 +231,7 @@ class ICloudOperations:
 
         sorted_list_of_backups = sorted(new_list, key=lambda d: d['date_modified'])
 
-        list_counter = 1
+        list_counter = 0
         while_counter = len(sorted_list_of_backups)
 
         while max_backup_files < while_counter:
@@ -219,17 +243,20 @@ class ICloudOperations:
             log(level="INFO", message="Backup file deleted", values={"Backup file": file["filename"]})
 
 
-def log(level: str = "INFO", message: str = None, values=None):
+def log(level: str = "INFO", message: str = None, values=None, return_str: bool = False):
     current_date = datetime.now()
     values_list = ""
 
     if values is not None:
         values_list = f" - Values : {values}"
 
-    print(f"{current_date} - [{level}] {message}{values_list}")
+    if return_str is True:
+        return f"{current_date} - [{level}] {message}{values_list}"
+    else:
+        print(f"{current_date} - [{level}] {message}{values_list}")
 
-    if level == "ERROR":
-        exit()
+        if level == "ERROR":
+            exit()
 
 
 def init_parser():
@@ -243,22 +270,28 @@ def init_parser():
     parser.add_argument("-c", "--compress", required=False, action=argparse.BooleanOptionalAction,
                         help="Create Tar Backup"),
 
-    parser.add_argument('-e', '--encrypt', required=False, action=argparse.BooleanOptionalAction, help='Encrypt Backup'),
-    parser.add_argument('-d', '--decrypt', required=False, action=argparse.BooleanOptionalAction, help='Decrypt Backup'),
+    parser.add_argument('-e', '--encrypt', required=False, action=argparse.BooleanOptionalAction,
+                        help='Encrypt Backup'),
+    parser.add_argument('-d', '--decrypt', required=False, action=argparse.BooleanOptionalAction,
+                        help='Decrypt Backup'),
 
-    parser.add_argument('-i', '--input', required=True, type=str, help='Source path of your file or folder')
-    parser.add_argument('-o', '--output', required=True, type=str, help='Output path for the compressed tar file')
+    parser.add_argument('-i', '--input', required=False, type=str, help='Source path of your file or folder')
+    parser.add_argument('-o', '--output', required=False, type=str, help='Output path for the compressed tar file')
 
     parser.add_argument('-u', '--upload', required=False, type=bool, action=argparse.BooleanOptionalAction,
                         help='Upload compressed tar file to Apple iCloud')
-    #parser.add_argument('--max_backups', required=False, type=int, default=2,
-     #                   help='Maximum number of iCloud backups that are stored')
+    parser.add_argument('--max-backups', required=False, type=int, default=2,
+                        help='Maximum number of iCloud backups that are stored')
 
     parser.add_argument('-v', '--verbose', default=False, required=False, action=argparse.BooleanOptionalAction,
                         help='Run in verbose mode'),
     parser.add_argument('-p', '--passwd', required=False, type=str, help='Password used to encrypt Backup'),
 
     parser.add_argument('-a', '--apple_id', required=False, type=str)
+    parser.add_argument('--add-apple-keyring', required=False, type=str, help='Add your Apple '
+                                                                              'credentials to secure System keyring')
+    parser.add_argument('--delete-apple-keyring', required=False, type=str, help='Delete your Apple '
+                                                                                 'credentials from secure System keyring')
 
     return parser.parse_args()
 
@@ -266,21 +299,33 @@ def init_parser():
 def check_bad_args(args):
     """check bad combinations of arguments"""
 
-    if args.compress and args.decrypt:
+    if (args.add_apple_keyring is not None or args.delete_apple_keyring is not None) and \
+            (args.compress or args.decrypt or args.encrypt):
+        log(level="ERROR", message="When argument --add_apple_keyring set no other operations are permitted")
+
+    elif (args.add_apple_keyring is True) and (args.delete_apple_keyring is True):
+        log(level="ERROR", message="Argument --add_apple_keyring and --delete_apple_keyring can"
+                                   " not run at both")
+
+    elif args.compress and args.decrypt:
         log(level="ERROR", message="Can not compress and decrypt at the same time")
 
-    if args.encrypt and args.decrypt:
+    elif args.encrypt and args.decrypt:
         log(level="ERROR", message="Can not encrypt and decrypt at the same time")
 
-    if args.encrypt and (args.passwd is None):
+    elif (args.compress or args.encrypt or args.decrypt) and \
+            (args.input is None and args.output is None):
+        log(level="ERROR", message="Argument --input and --output is required")
+
+    elif args.encrypt and (args.passwd is None):
         log(level="ERROR", message="Can not encrpyt File if password is not set",
             values={"Encrpyt": args.encrypt, "Password": args.passwd})
 
-    if args.decrypt and args.apple_id:
+    elif args.decrypt and args.apple_id:
         log(level="ERROR", message="Decryption do not need an apple id",
             values={"Decypt": args.decrypt, "Apple ID": args.apple_id})
 
-    if (args.apple_id is None) and (args.upload is True):
+    elif (args.apple_id is None) and args.upload:
         log(level="ERROR", message="You need an apple id to upload files")
 
 
@@ -288,6 +333,13 @@ if __name__ == "__main__":
 
     args = init_parser()
     check_bad_args(args=args)
+
+    if args.add_apple_keyring:
+        ICloudOperations.create_keyring(username=args.add_apple_keyring)
+        exit()
+    elif args.delete_apple_keyring:
+        ICloudOperations.delete_keyring(username=args.delete_apple_keyring)
+        exit()
 
     if args.compress:
         obj = CreateBackup(
@@ -307,8 +359,8 @@ if __name__ == "__main__":
 
             obj.upload_new_backup(source=f"{args.input}.backup")
 
-            time.sleep(5) # Wait 5 seconds after uploading files
-            obj.delete_oldest_backup_file()
+            time.sleep(5)  # Wait 5 seconds before uploading files
+            obj.delete_oldest_backup_file(max_backup_files=args.max_backups)
 
     if args.decrypt:
         obj = DecryptBackup(
