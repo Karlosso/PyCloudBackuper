@@ -217,7 +217,7 @@ class ICloudOperations:
 
         log(level="INFO", message="Backup uploaded successfully", values={"Upload File": upload_filename})
 
-        os.remove(upload_filename) # Remove Backup File from local System
+        os.remove(upload_filename)  # Remove Backup File from local System
         log(level="INFO", message="Local Backup deleted successfully", values={"Local Backup": upload_filename})
 
     def delete_oldest_backup_file(self, max_backup_files: int = 2):
@@ -228,9 +228,7 @@ class ICloudOperations:
 
         for file in files:
             stream = self.api.drive["Backup"]["PyCloudBackups"][f"{file}"]
-            new_dict = {}
-            new_dict["filename"] = stream.name
-            new_dict["date_modified"] = stream.date_modified
+            new_dict = {"filename": stream.name, "date_modified": stream.date_modified}
 
             new_list.append(new_dict)
 
@@ -269,7 +267,8 @@ def init_parser():
 
     # Parser Config
     parser = argparse.ArgumentParser(prog='PyCloudBackuper',
-                                     description='Compress decrypt and upload compressed encrypted tar file to your apple icloud')
+                                     description='Compress decrypt and upload compressed encrypted tar file to your '
+                                                 'apple icloud')
 
     # Parser
     parser.add_argument("-c", "--compress", required=False, action=argparse.BooleanOptionalAction,
@@ -296,7 +295,8 @@ def init_parser():
     parser.add_argument('--add-apple-keyring', required=False, type=str, help='Add your Apple '
                                                                               'credentials to secure System keyring')
     parser.add_argument('--delete-apple-keyring', required=False, type=str, help='Delete your Apple '
-                                                                                 'credentials from secure System keyring')
+                                                                                 'credentials from secure System '
+                                                                                 'keyring')
 
     return parser.parse_args()
 
