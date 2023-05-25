@@ -2,6 +2,7 @@ import datetime
 import tarfile
 import os.path
 import sys
+import click
 import argparse
 import time
 import pyAesCrypt
@@ -158,7 +159,7 @@ class ICloudOperations:
                 if not result:
                     print("Failed to request trust. You will likely be prompted for the code again in the coming weeks")
         elif self.api.requires_2sa:
-            import click
+
             print("Two-step authentication required. Your trusted devices are:")
 
             devices = self.api.trusted_devices
@@ -205,15 +206,19 @@ class ICloudOperations:
         # split source full pathfile
         path = os.path.split(source)[0]
         filename = os.path.split(source)[1]
+        upload_filename = f"{cur_date}_{filename}"
 
         os.chdir(path)
+        os.rename(src=filename, dst=upload_filename)
 
-        with open(filename, "rb") as stream:
+        with open(upload_filename, "rb") as stream:
             self.api.drive["Backup"]["PyCloudBackups"].upload(stream)
             time.sleep(5)  # Wait 5 seconds before renaming files
-            self.api.drive["Backup"]["PyCloudBackups"][f"{filename}"].rename(f"{cur_date}_{filename}")
 
-        log("INFO", message="Upload backup file successful", values={"Upload File": f"{cur_date}_{filename}"})
+        log(level="INFO", message="Backup uploaded successfully", values={"Upload File": upload_filename})
+
+        os.remove(upload_filename) # Remove Backup File from local System
+        log(level="INFO", message="Local Backup deleted successfully", values={"Local Backup": upload_filename})
 
     def delete_oldest_backup_file(self, max_backup_files: int = 2):
         """delete oldest backup file"""
