@@ -44,13 +44,19 @@ Important! Your credentials will only be stored locally in the system keyring.
 Next, a new backup can be created using the following commandlet. Other arguments can be found in the help list.
 
 ```console
-python PyCloudBackuper.py --compress --encrypt --passwd "SecurePassword123!$" --upload --input "/Backup/folder_to_Backup" --output /Backup/ --apple-id "test@apple.id"
+python PyCloudBackuper.py --compress --encrypt --upload --input "/Backup/folder_to_Backup" --output /Backup/ --apple-id "test@apple.id"
 ```
 
 To delete your Apple id from system keyring use the following command
 
 ```console
 python PyCloudBackuper.py --delete-apple-keyring test@apple.id
+```
+
+To delete your Backup password from system keyring use the following command
+
+```console
+python PyCloudBackuper.py --delete-backup-keyring
 ```
 
 ## Errors
