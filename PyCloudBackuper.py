@@ -58,7 +58,7 @@ class SystemBackupKeyring:
         if keyring.get_credential(service_name=self.namespace, username=self.username) is None:
             self.create_backup_keyring()
 
-        passwd = keyring.get_credential(service_name=self.namespace, username=self.username)
+        passwd = keyring.get_password(service_name=self.namespace, username=self.username)
         return str(passwd)  # Return Backup password
 
 
@@ -130,6 +130,8 @@ class DecryptBackup(SystemBackupKeyring):
         with tarfile.open(f'{self.filename}.tar.gz') as tar:
             tar.extractall()
 
+        log(level="INFO", message="Local Backup successfully unpacked")
+
         os.remove(f'{self.filename}.tar.gz')
 
     def __decrypt_backup(self):
@@ -140,6 +142,8 @@ class DecryptBackup(SystemBackupKeyring):
             outfile=f'{self.filename}.tar.gz',
             passw=self.get_backup_keyring()
         )
+
+        log(level="INFO", message="Local Backup successfully decrypted")
 
     def decrypt(self):
         try:
@@ -305,7 +309,8 @@ def log(level: str = "INFO", message: str = None, values=None, return_str: bool 
     if return_str is True:
         return f"{current_date} - [{level}] {message}{values_list}"
     else:
-        sys.stdout.write(f"{current_date} - [{level}] {message}{values_list}\n")
+        if args.verbose:
+            sys.stdout.write(f"{current_date} - [{level}] {message}{values_list}\n")
 
         if level == "ERROR":
             exit()
@@ -336,7 +341,7 @@ def init_parser():
     parser.add_argument('--max-backups', required=False, type=int, default=2,
                         help='Maximum number of iCloud backups that are stored')
 
-    parser.add_argument('-v', '--verbose', default=False, required=False, action=argparse.BooleanOptionalAction,
+    parser.add_argument('-v', '--verbose', default=True, required=False, action=argparse.BooleanOptionalAction,
                         help='Run in verbose mode'),
 
     parser.add_argument('--add-backup-keyring', required=False, type=bool, action=argparse.BooleanOptionalAction,
