@@ -99,7 +99,7 @@ class DecryptBackup:
             self.__decrypt_tar_file()
 
         except Exception as error:
-            print(error)
+            log(level="ERROR", message=str(error))
             exit()
 
 
@@ -142,25 +142,25 @@ class ICloudOperations:
 
         # 2fa authentication
         if self.api.requires_2fa:
-            print("Two-factor authentication required.")
-            code = input("Enter the code you received of one of your approved devices: ")
+            code = input(log(level="INTERACTION", message="Two-Factor-Authentication code: "))
             result = self.api.validate_2fa_code(code)
-            print("Code validation result: %s" % result)
+            log(level="INFO", message=f"Two-Factor-Authentication code validation result", values={"Result": result})
 
             if not result:
-                print("Failed to verify security code")
+                log(level="ERROR", message="Failed to verify Two-Factor-Authentication code")
                 sys.exit(1)
 
             if not self.api.is_trusted_session:
-                print("Session is not trusted. Requesting trust...")
+                log(level="INFO", message="Session is not trusted. Requesting trust...")
                 result = self.api.trust_session()
-                print("Session trust result %s" % result)
+                log(level="INFO", message="Session trust result", values={"Result": result})
 
                 if not result:
-                    print("Failed to request trust. You will likely be prompted for the code again in the coming weeks")
+                    log(level="ERROR", message="Failed to request trust. You will likely be prompted for the code "
+                                               "again in the coming weeks")
         elif self.api.requires_2sa:
 
-            print("Two-step authentication required. Your trusted devices are:")
+            log(level="INFO", message="Two-step authentication required. Your trusted devices are:")
 
             devices = self.api.trusted_devices
             for i, device in enumerate(devices):
@@ -172,12 +172,12 @@ class ICloudOperations:
             device = click.prompt('Which device would you like to use?', default=0)
             device = devices[device]
             if not self.api.send_verification_code(device):
-                print("Failed to send verification code")
+                log(level="ERROR", message="Failed to send verification code")
                 sys.exit(1)
 
             code = click.prompt('Please enter validation code')
             if not self.api.validate_verification_code(device, code):
-                print("Failed to verify verification code")
+                log(level="ERROR", message="Failed to verify verification code")
                 sys.exit(1)
 
         log("INFO", message="Apple iCloud authentication successful", values={"Apple ID": self.apple_id})
@@ -256,7 +256,7 @@ def log(level: str = "INFO", message: str = None, values=None, return_str: bool 
     if return_str is True:
         return f"{current_date} - [{level}] {message}{values_list}"
     else:
-        print(f"{current_date} - [{level}] {message}{values_list}")
+        sys.stdout.write(f"{current_date} - [{level}] {message}{values_list}")
 
         if level == "ERROR":
             exit()
