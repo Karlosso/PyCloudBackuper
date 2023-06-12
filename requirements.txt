@@ -1,3 +1,4 @@
 pyAesCrypt~=6.0.0
 pyicloud~=1.0.0
 click~=8.1.3
+keyring~=23.13.1

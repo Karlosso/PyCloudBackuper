@@ -10,18 +10,67 @@ from datetime import datetime
 from getpass import getpass
 from pyicloud import PyiCloudService
 from pyicloud import utils as PyiCloudUtils
+import keyring
+import keyring.util.platform_ as keyring_platform
 
 
-class CreateBackup:
+class SystemBackupKeyring:
+    """Class for system Backup keyrings"""
+
+    def __init__(self):
+        self.namespace = "PyCloudBackuper"
+        self.username = "BackupKey"
+
+        keyring_platform.config_root()
+        # /home/username/.config/python_keyring  # Might be different for you
+
+        keyring.get_keyring()
+
+    def create_backup_keyring(self) -> None:
+        """Create new Backup system keyring"""
+
+        keyring.set_password(
+            service_name=self.namespace,
+            username=self.username,
+            password=getpass(log(level="INTERACTION", message="Enter Backup Password: ", return_str=True))
+        )
+
+        log(
+            level="INFO",
+            message="System backup key ring successfully created",
+            values={"Namespace": self.namespace, "Entry": self.username}
+        )
+
+    def delete_backup_keyring(self) -> None:
+        """Delete Backup system keyring"""
+
+        keyring.delete_password(service_name=self.namespace, username=self.username)
+        log(
+            level="INFO",
+            message="System backup key ring successfully deleted",
+            values={"Namespace": self.namespace, "Entry": self.username}
+        )
+
+    def get_backup_keyring(self) -> str:
+        """Get Backup system keyring"""
+
+        # If None create new Keyring
+        if keyring.get_credential(service_name=self.namespace, username=self.username) is None:
+            self.create_backup_keyring()
+
+        passwd = keyring.get_credential(service_name=self.namespace, username=self.username)
+        return str(passwd)  # Return Backup password
+
+
+class CreateBackup(SystemBackupKeyring):
     """Class to create new Backup"""
 
-    def __init__(self, source: str, destination: str, verbose: bool = True, encrypt: bool = True,
-                 passwd: str = None):
+    def __init__(self, source: str, destination: str, verbose: bool = True, encrypt: bool = True):
+        super().__init__()
         self.source = source
         self.destination = destination
         self.verbose = verbose
         self.encrypt = encrypt
-        self.passwd = passwd
 
         # Path and File
         self.filepath = os.path.split(self.source)[0]
@@ -41,7 +90,7 @@ class CreateBackup:
         pyAesCrypt.encryptFile(
             infile=f'{self.filename}.tar.gz',
             outfile=f'{self.filename}.backup',
-            passw=self.passwd
+            passw=self.get_backup_keyring()
         )
 
         log("INFO", message="New encrypted backup file created", values={"New File": f"{self.filename}.backup"})
@@ -62,14 +111,14 @@ class CreateBackup:
             log(level="ERROR", message=f"{error}")
 
 
-class DecryptBackup:
+class DecryptBackup(SystemBackupKeyring):
     """Class to encrypt backup"""
 
-    def __init__(self, source: str, destination: str, verbose: bool = True, passwd: str = None):
+    def __init__(self, source: str, destination: str, verbose: bool = True):
+        super().__init__()
         self.source = source,
         self.destination = destination,
         self.verbose = verbose,
-        self.passwd = passwd,
 
         # Path and File
         self.filepath = os.path.split(source)[0]
@@ -89,7 +138,7 @@ class DecryptBackup:
         pyAesCrypt.decryptFile(
             infile=self.filename,
             outfile=f'{self.filename}.tar.gz',
-            passw=self.passwd
+            passw=self.get_backup_keyring()
         )
 
     def decrypt(self):
@@ -142,7 +191,7 @@ class ICloudOperations:
 
         # 2fa authentication
         if self.api.requires_2fa:
-            code = input(log(level="INTERACTION", message="Two-Factor-Authentication code: "))
+            code = input(log(level="INTERACTION", message="Two-Factor-Authentication code: ", return_str=True))
             result = self.api.validate_2fa_code(code)
             log(level="INFO", message=f"Two-Factor-Authentication code validation result", values={"Result": result})
 
@@ -232,7 +281,7 @@ class ICloudOperations:
 
             new_list.append(new_dict)
 
-        sorted_list_of_backups = sorted(new_list, key=lambda d: d['date_modified'])
+        sorted_list_of_backups = sorted(new_list, key=lambda d: d['date_modified'], reverse=True)
 
         list_counter = 0
         while_counter = len(sorted_list_of_backups)
@@ -256,7 +305,7 @@ def log(level: str = "INFO", message: str = None, values=None, return_str: bool 
     if return_str is True:
         return f"{current_date} - [{level}] {message}{values_list}"
     else:
-        sys.stdout.write(f"{current_date} - [{level}] {message}{values_list}")
+        sys.stdout.write(f"{current_date} - [{level}] {message}{values_list}\n")
 
         if level == "ERROR":
             exit()
@@ -289,9 +338,13 @@ def init_parser():
 
     parser.add_argument('-v', '--verbose', default=False, required=False, action=argparse.BooleanOptionalAction,
                         help='Run in verbose mode'),
-    parser.add_argument('-p', '--passwd', required=False, type=str, help='Password used to encrypt Backup'),
 
-    parser.add_argument('-a', '--apple_id', required=False, type=str)
+    parser.add_argument('--add-backup-keyring', required=False, type=bool, action=argparse.BooleanOptionalAction,
+                        help='Add your Backup credentials to secure System keyring')
+    parser.add_argument('--delete-backup-keyring', required=False, type=bool, action=argparse.BooleanOptionalAction,
+                        help='Delete your Backup credentials from secure System keyring')
+
+    parser.add_argument('-a', '--apple-id', required=False, type=str)
     parser.add_argument('--add-apple-keyring', required=False, type=str, help='Add your Apple '
                                                                               'credentials to secure System keyring')
     parser.add_argument('--delete-apple-keyring', required=False, type=str, help='Delete your Apple '
@@ -306,10 +359,20 @@ def check_bad_args(args):
 
     if (args.add_apple_keyring is not None or args.delete_apple_keyring is not None) and \
             (args.compress or args.decrypt or args.encrypt):
-        log(level="ERROR", message="When argument --add_apple_keyring set no other operations are permitted")
+        log(level="ERROR", message="When argument --add-apple-keyring or --delete-apple-keyring set no other "
+                                   "operations are permitted")
 
     elif (args.add_apple_keyring is True) and (args.delete_apple_keyring is True):
-        log(level="ERROR", message="Argument --add_apple_keyring and --delete_apple_keyring can"
+        log(level="ERROR", message="Argument --add-apple-keyring and --delete-apple-keyring can"
+                                   " not run at both")
+
+    elif (args.add_backup_keyring is not None or args.delete_backup_keyring is not None) and \
+            (args.compress or args.decrypt or args.encrypt):
+        log(level="ERROR", message="When argument --add-backup-keyring or --delete-backup-keyring set no other "
+                                   "operations are permitted")
+
+    elif (args.add_backup_keyring is True) and (args.delete_backup_keyring is True):
+        log(level="ERROR", message="Argument --add-backup-keyring and --delete-backup-keyring can"
                                    " not run at both")
 
     elif args.compress and args.decrypt:
@@ -322,10 +385,6 @@ def check_bad_args(args):
             (args.input is None and args.output is None):
         log(level="ERROR", message="Argument --input and --output is required")
 
-    elif args.encrypt and (args.passwd is None):
-        log(level="ERROR", message="Can not encrpyt File if password is not set",
-            values={"Encrpyt": args.encrypt, "Password": args.passwd})
-
     elif args.decrypt and args.apple_id:
         log(level="ERROR", message="Decryption do not need an apple id",
             values={"Decypt": args.decrypt, "Apple ID": args.apple_id})
@@ -336,43 +395,50 @@ def check_bad_args(args):
 
 if __name__ == "__main__":
 
-    args = init_parser()
-    check_bad_args(args=args)
+    try:
 
-    if args.add_apple_keyring:
-        ICloudOperations.create_keyring(username=args.add_apple_keyring)
-        exit()
-    elif args.delete_apple_keyring:
-        ICloudOperations.delete_keyring(username=args.delete_apple_keyring)
-        exit()
+        args = init_parser()
+        check_bad_args(args=args)
 
-    if args.compress:
-        obj = CreateBackup(
-            source=args.input,
-            destination=args.output,
-            verbose=args.verbose,
-            encrypt=args.encrypt,
-            passwd=args.passwd,
-        )
+        backup_keyring = SystemBackupKeyring()  # Init system keyring
 
-        obj.create()
+        if args.add_apple_keyring:
+            ICloudOperations.create_keyring(username=args.add_apple_keyring)
+        elif args.delete_apple_keyring:
+            ICloudOperations.delete_keyring(username=args.delete_apple_keyring)
+        elif args.add_backup_keyring:
+            backup_keyring.create_backup_keyring()
+        elif args.delete_backup_keyring:
+            backup_keyring.delete_backup_keyring()
 
-        if args.upload:
-            obj = ICloudOperations(
-                apple_id=args.apple_id
+        if args.compress:
+            obj = CreateBackup(
+                source=args.input,
+                destination=args.output,
+                verbose=args.verbose,
+                encrypt=args.encrypt,
             )
 
-            obj.upload_new_backup(source=f"{args.input}.backup")
+            obj.create()
 
-            time.sleep(5)  # Wait 5 seconds before uploading files
-            obj.delete_oldest_backup_file(max_backup_files=args.max_backups)
+            if args.upload:
+                obj = ICloudOperations(
+                    apple_id=args.apple_id
+                )
 
-    if args.decrypt:
-        obj = DecryptBackup(
-            source=args.input,
-            destination=args.output,
-            verbose=args.verbose,
-            passwd=args.passwd,
-        )
+                obj.upload_new_backup(source=f"{args.input}.backup")
 
-        obj.decrypt()
+                time.sleep(5)  # Wait 5 seconds before uploading files
+                obj.delete_oldest_backup_file(max_backup_files=args.max_backups)
+
+        if args.decrypt:
+            obj = DecryptBackup(
+                source=args.input,
+                destination=args.output,
+                verbose=args.verbose,
+            )
+
+            obj.decrypt()
+
+    except Exception as error:
+        log(level="ERROR", message=str(error))
